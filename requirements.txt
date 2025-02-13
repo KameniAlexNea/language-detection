@@ -1,0 +1,8 @@
+datasets
+torch
+transformers[torch]
+gradio
+pycountry
+accelerate
+wandb
+scikit-learn
