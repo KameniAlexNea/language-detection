@@ -1,3 +1,8 @@
+import logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 import os
 import json
 import torch
@@ -5,7 +10,7 @@ import datasets
 from transformers import (
     BertConfig,
     BertForSequenceClassification,
-    PreTrainedTokenizerFast,
+    BertTokenizerFast,
     TrainingArguments,
     Trainer,
 )
@@ -19,19 +24,31 @@ os.environ["WANDB_PROJECT"] = "lang_detection"
 # os.environ["WANDB_WATCH"] = "none"
 
 
-def main():
-    test_batch_size = 512
-    train_batch_size = 256
-    # Load dataset
-    ds = datasets.load_from_disk("data/dataset/sample_20")
+test_batch_size = 512
+train_batch_size = 256
+
+def load_split_data(langs_dict):
+    ds = datasets.load_dataset("hac541309/open-lid-dataset", split="train")
     splits = ds.train_test_split(test_size=0.1, seed=41)
     train, test = splits["train"], splits["test"]
+    test = test.train_test_split(test_size=len(langs_dict) * test_batch_size, seed=41)
+    valid, test = test["test"], test["train"]
+
+    logging.warning("Before Saving Test Set")
+    test.save_to_disk("data/test_dataset")
+    logging.warning("Test Set Saved")
+    return train, valid, test
+
+
+def main():
+    # Load dataset
+    train, valid, test = load_split_data(langs_dict)
 
     # Load language dictionary
     langs_dict: dict = json.load(open("data/languages.json"))
 
     # Load tokenizer
-    tokenizer: PreTrainedTokenizerFast = PreTrainedTokenizerFast.from_pretrained(
+    tokenizer: BertTokenizerFast = BertTokenizerFast.from_pretrained(
         "data/tokenizer"
     )
 
@@ -46,6 +63,8 @@ def main():
 
     # Initialize model
     model = BertForSequenceClassification(config)
+
+    logging.info(model)
 
     # Define transformation function
     def transform(examples):
@@ -63,9 +82,6 @@ def main():
     train = train.rename_column("lang", "label")
     test = test.rename_column("lang", "label")
     train.set_transform(transform)
-
-    test = test.train_test_split(test_size=len(langs_dict) * test_batch_size, seed=41)
-    valid, test = test["test"], test["train"]
     valid.set_transform(transform)
     test.set_transform(transform)
 
@@ -80,7 +96,7 @@ def main():
         eval_strategy="steps",
         eval_steps=1000,
         save_strategy="steps",
-        save_steps=1000,
+        save_steps=2000,
         logging_strategy="steps",
         logging_steps=500,
         learning_rate=2e-5,
@@ -98,6 +114,7 @@ def main():
         # dataloader_drop_last=True,
         bf16=True,
         torch_compile=True,
+        save_total_limit=10
     )
 
     # Initialize Trainer
