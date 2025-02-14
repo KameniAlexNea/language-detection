@@ -88,7 +88,7 @@ from transformers import BertTokenizerFast
 custom_tokenizer = BertTokenizerFast(
     tokenizer_object=tokenizer,
 )
-custom_tokenizer.model_max_length = 1024
+custom_tokenizer.model_max_length = 512
 custom_tokenizer.padding_side = "right"  # or 'left'
 custom_tokenizer.truncation_side = "right"  # or 'left'
 

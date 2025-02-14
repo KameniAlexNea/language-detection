@@ -35,17 +35,19 @@ def load_split_data(langs_dict):
     valid, test = test["test"], test["train"]
 
     logging.warning("Before Saving Test Set")
-    test.save_to_disk("data/test_dataset")
+    folder_name = "data/test_dataset"
+    if not os.path.exists(folder_name):
+        test.save_to_disk(folder_name)
     logging.warning("Test Set Saved")
     return train, valid, test
 
 
 def main():
-    # Load dataset
-    train, valid, test = load_split_data(langs_dict)
-
     # Load language dictionary
     langs_dict: dict = json.load(open("data/languages.json"))
+
+    # Load dataset
+    train, valid, test = load_split_data(langs_dict)
 
     # Load tokenizer
     tokenizer: BertTokenizerFast = BertTokenizerFast.from_pretrained(
@@ -81,6 +83,7 @@ def main():
     # Rename columns and set transformation
     train = train.rename_column("lang", "label")
     test = test.rename_column("lang", "label")
+    valid = valid.rename_column("lang", "label")
     train.set_transform(transform)
     valid.set_transform(transform)
     test.set_transform(transform)
