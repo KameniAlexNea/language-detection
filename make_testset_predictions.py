@@ -8,7 +8,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 test = datasets.load_from_disk("data/test_dataset")
 
 # Define model checkpoint
-model_name = "data/results/checkpoint-76000"
+model_name = "alexneakameni/language_detection"
 
 # Load tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -55,7 +55,7 @@ results = {
 }
 
 # Save the final predictions to a JSON file
-with open("data/predictions/final_predictions.json", "w") as f:
+with open("data/predictions/final_predictions_base.json", "w") as f:
     json.dump(results, f)
 
-print("Prediction complete. Results saved to data/predictions/final_predictions.json")
+print("Prediction complete. Results saved to data/predictions/final_predictions_base.json")
