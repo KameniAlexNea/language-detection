@@ -1,13 +1,10 @@
 import logging
-
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
 import os
 import json
+import random
+import re
 import torch
-import datasets
+from datasets import load_dataset
 from transformers import (
     BertConfig,
     BertForSequenceClassification,
@@ -16,24 +13,22 @@ from transformers import (
     Trainer,
 )
 from evaluator import ComputeMetric
-import random
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Set environment variables
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["WANDB_PROJECT"] = "lang_detection"
-# os.environ["WANDB_LOG_MODEL"] = "true"
-# os.environ["WANDB_WATCH"] = "none"
 
-
+# Training parameters
 test_batch_size = 512
 train_batch_size = 256
 
 
 class TextAugmentation:
-    def __init__(
-        self, remove_digits=0.1, shuffle_words=0.5, remove_words=0.2, include_digits=0.3
-    ):
+    def __init__(self, remove_digits=0.1, shuffle_words=0.5, remove_words=0.2, include_digits=0.3):
         self.prob_remove_digits = remove_digits
         self.prob_shuffle_words = shuffle_words
         self.prob_remove_words = remove_words
@@ -41,86 +36,71 @@ class TextAugmentation:
 
     def __call__(self, text: str):
         if random.random() < self.prob_include_digits:
-            text = self.include_digits(text)
+            text += str(random.randint(0, 10000))
         if random.random() < self.prob_remove_digits:
-            text = self.remove_digits(text)
+            text = re.sub(r'\d', '', text)
         if random.random() < self.prob_shuffle_words:
-            text = self.shuffle_words(text)
-        if random.random() < self.prob_remove_words:
-            text = self.remove_words(text)
+            words = text.split()
+            random.shuffle(words)
+            text = " ".join(words)
+        if random.random() < self.prob_remove_words and len(text.split()) > 1:
+            words = text.split()
+            words.pop(random.randint(0, len(words) - 1))
+            text = " ".join(words)
         return text
 
     def batch_call(self, texts: list):
         return [self(text) for text in texts]
 
-    def shuffle_words(self, text: str):
-        words = text.split()
-        random.shuffle(words)
-        return " ".join(words)
-
-    def remove_words(self, text: str):
-        words = text.split()
-        if len(words) > 1:
-            index_to_remove = random.randint(0, len(words) - 1)
-            words.pop(index_to_remove)
-            return " ".join(words)
-        return text
-
-    def remove_digits(self, text: str):
-        return "".join([i for i in text if not i.isdigit()])
-
-    def include_digits(self, text: str):
-        digits = random.randint(0, 10000)
-        return text + str(digits)
-
 
 def load_split_data(langs_dict):
-    ds = datasets.load_dataset("hac541309/open-lid-dataset", split="train")
+    ds = load_dataset("hac541309/open-lid-dataset", split="train")
     splits = ds.train_test_split(test_size=0.1, seed=41)
     train, test = splits["train"], splits["test"]
     test = test.train_test_split(test_size=len(langs_dict) * test_batch_size, seed=41)
     valid, test = test["test"], test["train"]
 
-    logging.warning("Before Saving Test Set")
-    folder_name = "data/test_dataset"
-    if not os.path.exists(folder_name):
-        test.save_to_disk(folder_name)
-    logging.warning("Test Set Saved")
+    test_save_path = "data/test_dataset"
+    if not os.path.exists(test_save_path):
+        logging.warning("Saving Test Set...")
+        test.save_to_disk(test_save_path)
+        logging.warning("Test Set Saved.")
+    
     return train, valid, test
 
 
 def load_model_and_tokenizer():
-    if os.path.exists("data/model"):
-        # Load language dictionary
-        langs_dict: dict = json.load(open("data/languages.json"))
-        # Load tokenizer
-        tokenizer: BertTokenizerFast = BertTokenizerFast.from_pretrained(
-            "data/tokenizer"
-        )
+    model_path = "data/model"
+    if os.path.exists(model_path):
+        with open("data/languages.json") as f:
+            langs_dict = json.load(f)
 
-        # Load and update model configuration
-        config_file = json.load(open("data/model_config.json"))
-        config_file["pad_token_id"] = tokenizer.pad_token_id
-        config_file["vocab_size"] = tokenizer.vocab_size
-        config_file["num_labels"] = len(langs_dict)
-        config_file["label2id"] = langs_dict
-        config_file["id2label"] = {v: k for k, v in langs_dict.items()}
-        config = BertConfig(**config_file)
+        tokenizer = BertTokenizerFast.from_pretrained("data/tokenizer")
 
-        # Initialize model
+        with open("data/model_config.json") as f:
+            config_data: dict = json.load(f)
+
+        config_data.update({
+            "pad_token_id": tokenizer.pad_token_id,
+            "vocab_size": tokenizer.vocab_size,
+            "num_labels": len(langs_dict),
+            "label2id": langs_dict,
+            "id2label": {v: k for k, v in langs_dict.items()}
+        })
+        config = BertConfig(**config_data)
+
         model = BertForSequenceClassification(config)
         return model, tokenizer, langs_dict
+
     existing_model = "alexneakameni/language_detection"
-    tokenizer: BertTokenizerFast = BertTokenizerFast.from_pretrained(existing_model)
+    tokenizer = BertTokenizerFast.from_pretrained(existing_model)
     config = BertConfig.from_pretrained(existing_model)
     model = BertForSequenceClassification(config)
-    langs_dict = model.config.label2id
-    return model, tokenizer, langs_dict
+    return model, tokenizer, model.config.label2id
 
 
 def main():
-    # Load language dictionary
-    # Initialize model
+    # Load model and tokenizer
     model, tokenizer, langs_dict = load_model_and_tokenizer()
 
     # Load dataset
@@ -131,38 +111,25 @@ def main():
     augment_text = TextAugmentation()
 
     def make_augmented_text(examples):
-        examples["text"] = (
-            augment_text(examples["text"])
-            if isinstance(examples["text"], str)
-            else augment_text.batch_call(examples["text"])
-        )
+        examples["text"] = augment_text.batch_call(examples["text"]) if isinstance(examples["text"], list) else augment_text(examples["text"])
         return transform(examples)
 
-    # Define transformation function
     def transform(examples):
-        tokens = tokenizer(
-            examples["text"], truncation=True, padding="max_length", return_tensors="pt"
-        )
-        tokens["label"] = (
-            torch.tensor([langs_dict[i] for i in examples["label"]])
-            if isinstance(examples["label"], list)
-            else torch.tensor(langs_dict[examples["label"]])
-        )
+        tokens = tokenizer(examples["text"], truncation=True, padding="max_length", return_tensors="pt")
+        tokens["label"] = torch.tensor([langs_dict[i] for i in examples["label"]]) if isinstance(examples["label"], list) else torch.tensor(langs_dict[examples["label"]])
         return tokens
 
-    # Rename columns and set transformation
-    train = train.rename_column("lang", "label")
-    test = test.rename_column("lang", "label")
-    valid = valid.rename_column("lang", "label")
+    # Apply transformations
+    for dataset in [train, valid, test]:
+        dataset = dataset.rename_column("lang", "label")
+
     train.set_transform(make_augmented_text)
     valid.set_transform(transform)
     test.set_transform(transform)
 
-    print(valid, test, train)
+    logging.info(f"Dataset Sizes - Train: {len(train)}, Valid: {len(valid)}, Test: {len(test)}")
 
-    print("Training size: ", len(train), len(valid), len(test))
-
-    # Set training arguments
+    # Define training arguments
     training_args = TrainingArguments(
         run_name="lang_detect",
         output_dir="./data/results",
@@ -184,7 +151,6 @@ def main():
         data_seed=41,
         dataloader_num_workers=8,
         lr_scheduler_type="cosine",
-        # dataloader_drop_last=True,
         bf16=True,
         torch_compile=True,
         save_total_limit=10,
@@ -192,21 +158,18 @@ def main():
 
     metric = ComputeMetric(langs_dict)
 
-    # Initialize Trainer
+    # Initialize and train model
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train,
         eval_dataset=valid,
         processing_class=tokenizer,
-        compute_metrics=metric.compute_metrics,  # Add compute_metrics to Trainer
+        compute_metrics=metric.compute_metrics,
     )
 
     trainer.evaluate(valid)
-
-    # Start training
     trainer.train()
-
     trainer.evaluate(test, metric_key_prefix="test")
 
 
