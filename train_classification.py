@@ -89,27 +89,42 @@ def load_split_data(langs_dict):
     return train, valid, test
 
 
+def load_model_and_tokenizer():
+    if os.path.exists("data/model"):
+        # Load language dictionary
+        langs_dict: dict = json.load(open("data/languages.json"))
+        # Load tokenizer
+        tokenizer: BertTokenizerFast = BertTokenizerFast.from_pretrained(
+            "data/tokenizer"
+        )
+
+        # Load and update model configuration
+        config_file = json.load(open("data/model_config.json"))
+        config_file["pad_token_id"] = tokenizer.pad_token_id
+        config_file["vocab_size"] = tokenizer.vocab_size
+        config_file["num_labels"] = len(langs_dict)
+        config_file["label2id"] = langs_dict
+        config_file["id2label"] = {v: k for k, v in langs_dict.items()}
+        config = BertConfig(**config_file)
+
+        # Initialize model
+        model = BertForSequenceClassification(config)
+        return model, tokenizer, langs_dict
+    existing_model = "alexneakameni/language_detection"
+    tokenizer: BertTokenizerFast = BertTokenizerFast.from_pretrained(existing_model)
+    config = BertConfig.from_pretrained(existing_model)
+    model = BertForSequenceClassification(config)
+    langs_dict = model.config.label2id
+    return model, tokenizer, langs_dict
+
+
 def main():
     # Load language dictionary
-    langs_dict: dict = json.load(open("data/languages.json"))
+    # Initialize model
+    model, tokenizer, langs_dict = load_model_and_tokenizer()
 
     # Load dataset
     train, valid, test = load_split_data(langs_dict)
-
-    # Load tokenizer
-    tokenizer: BertTokenizerFast = BertTokenizerFast.from_pretrained("data/tokenizer")
-
-    # Load and update model configuration
-    config_file = json.load(open("data/model_config.json"))
-    config_file["pad_token_id"] = tokenizer.pad_token_id
-    config_file["vocab_size"] = tokenizer.vocab_size
-    config_file["num_labels"] = len(langs_dict)
-    config_file["label2id"] = langs_dict
-    config_file["id2label"] = {v: k for k, v in langs_dict.items()}
-    config = BertConfig(**config_file)
-
-    # Initialize model
-    model = BertForSequenceClassification(config)
 
     logging.info(model)
 
