@@ -120,8 +120,9 @@ def main():
         return tokens
 
     # Apply transformations
-    for dataset in [train, valid, test]:
-        dataset = dataset.rename_column("lang", "label")
+    train = train.rename_column("lang", "label")
+    test = test.rename_column("lang", "label")
+    valid = valid.rename_column("lang", "label")
 
     train.set_transform(make_augmented_text)
     valid.set_transform(transform)
