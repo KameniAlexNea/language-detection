@@ -15,7 +15,7 @@ from transformers import (
     TrainingArguments,
     Trainer,
 )
-from evaluator import compute_metrics
+from evaluator import ComputeMetric
 import random
 
 # Set environment variables
@@ -190,6 +190,8 @@ def main():
         save_total_limit=10,
     )
 
+    metric = ComputeMetric(langs_dict)
+
     # Initialize Trainer
     trainer = Trainer(
         model=model,
@@ -197,7 +199,7 @@ def main():
         train_dataset=train,
         eval_dataset=valid,
         processing_class=tokenizer,
-        compute_metrics=compute_metrics,  # Add compute_metrics to Trainer
+        compute_metrics=metric.compute_metrics,  # Add compute_metrics to Trainer
     )
 
     trainer.evaluate(valid)
