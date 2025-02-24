@@ -1,4 +1,5 @@
 import logging
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -15,6 +16,7 @@ from transformers import (
     Trainer,
 )
 from evaluator import compute_metrics
+import random
 
 # Set environment variables
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -26,6 +28,51 @@ os.environ["WANDB_PROJECT"] = "lang_detection"
 
 test_batch_size = 512
 train_batch_size = 256
+
+
+class TextAugmentation:
+    def __init__(
+        self, remove_digits=0.1, shuffle_words=0.5, remove_words=0.2, include_digits=0.3
+    ):
+        self.prob_remove_digits = remove_digits
+        self.prob_shuffle_words = shuffle_words
+        self.prob_remove_words = remove_words
+        self.prob_include_digits = include_digits
+
+    def __call__(self, text: str):
+        if random.random() < self.prob_include_digits:
+            text = self.include_digits(text)
+        if random.random() < self.prob_remove_digits:
+            text = self.remove_digits(text)
+        if random.random() < self.prob_shuffle_words:
+            text = self.shuffle_words(text)
+        if random.random() < self.prob_remove_words:
+            text = self.remove_words(text)
+        return text
+
+    def batch_call(self, texts: list):
+        return [self(text) for text in texts]
+
+    def shuffle_words(self, text: str):
+        words = text.split()
+        random.shuffle(words)
+        return " ".join(words)
+
+    def remove_words(self, text: str):
+        words = text.split()
+        if len(words) > 1:
+            index_to_remove = random.randint(0, len(words) - 1)
+            words.pop(index_to_remove)
+            return " ".join(words)
+        return text
+
+    def remove_digits(self, text: str):
+        return "".join([i for i in text if not i.isdigit()])
+
+    def include_digits(self, text: str):
+        digits = random.randint(0, 10000)
+        return text + str(digits)
+
 
 def load_split_data(langs_dict):
     ds = datasets.load_dataset("hac541309/open-lid-dataset", split="train")
@@ -50,9 +97,7 @@ def main():
     train, valid, test = load_split_data(langs_dict)
 
     # Load tokenizer
-    tokenizer: BertTokenizerFast = BertTokenizerFast.from_pretrained(
-        "data/tokenizer"
-    )
+    tokenizer: BertTokenizerFast = BertTokenizerFast.from_pretrained("data/tokenizer")
 
     # Load and update model configuration
     config_file = json.load(open("data/model_config.json"))
@@ -67,6 +112,16 @@ def main():
     model = BertForSequenceClassification(config)
 
     logging.info(model)
+
+    augment_text = TextAugmentation()
+
+    def make_augmented_text(examples):
+        examples["text"] = (
+            augment_text(examples["text"])
+            if isinstance(examples["text"], str)
+            else augment_text.batch_call(examples["text"])
+        )
+        return transform(examples)
 
     # Define transformation function
     def transform(examples):
@@ -84,7 +139,7 @@ def main():
     train = train.rename_column("lang", "label")
     test = test.rename_column("lang", "label")
     valid = valid.rename_column("lang", "label")
-    train.set_transform(transform)
+    train.set_transform(make_augmented_text)
     valid.set_transform(transform)
     test.set_transform(transform)
 
@@ -117,7 +172,7 @@ def main():
         # dataloader_drop_last=True,
         bf16=True,
         torch_compile=True,
-        save_total_limit=10
+        save_total_limit=10,
     )
 
     # Initialize Trainer
