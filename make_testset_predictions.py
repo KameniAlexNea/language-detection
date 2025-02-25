@@ -3,12 +3,16 @@ import json
 import datasets
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import argparse
+
+parser = argparse.ArgumentParser(description="Run predictions on the test dataset.")
+parser.add_argument("--model_name", type=str, default="alexneakameni/language_detection", help="Path to the model checkpoint")
+args = parser.parse_args()
+model_name: str = args.model_name
 
 # Load your dataset
 test = datasets.load_from_disk("data/test_dataset")
 
-# Define model checkpoint
-model_name = "alexneakameni/language_detection"
 
 # Load tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(model_name)

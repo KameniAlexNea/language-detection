@@ -83,7 +83,7 @@ def load_split_data(langs_dict):
 
 
 def load_model_and_tokenizer():
-    if os.path.exists("data/model"):
+    if os.path.exists("data/tokenizer"):
         with open("data/languages.json") as f:
             langs_dict = json.load(f)
 
@@ -109,8 +109,8 @@ def load_model_and_tokenizer():
     existing_model = "alexneakameni/language_detection"
     tokenizer = BertTokenizerFast.from_pretrained(existing_model)
     config = BertConfig.from_pretrained(existing_model)
-    model = BertForSequenceClassification(config)
-    return model, tokenizer, model.config.label2id
+    model = BertForSequenceClassification.from_pretrained(existing_model)
+    return model, tokenizer, config.label2id
 
 
 def main():
@@ -194,7 +194,7 @@ def main():
         eval_dataset=valid,
         processing_class=tokenizer,
         compute_metrics=metric.compute_metrics,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=5)],
     )
 
     trainer.evaluate(valid)
