@@ -21,7 +21,11 @@ args = parser.parse_args()
 model_name: str = args.model_name
 
 # Load your dataset
-test = datasets.load_from_disk("data/test_dataset")
+# test = datasets.load_from_disk("data/test_dataset")
+# label_tag = "lang"
+
+test = datasets.load_dataset("papluca/language-identification", split="test")
+label_tag = "labels"
 
 
 # Load tokenizer and model
@@ -67,7 +71,7 @@ results = {"predictions": [], "expected": []}
 for pos, batch in tqdm(enumerate(test.batch(batch_size))):
     prediction_batch = predict_batch(batch)
     results["predictions"].append(prediction_batch["predicted_label"])
-    results["expected"].append(batch["lang"])
+    results["expected"].append(batch[label_tag])
     if pos % 100 == 0:
         with open(f"{save_folder}/final_predictions_base.json", "w") as f:
             json.dump(results, f)
