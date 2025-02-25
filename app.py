@@ -1,13 +1,15 @@
 import gradio as gr
 import torch
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import pipeline
 import pycountry
 
 # Load model and tokenizer
 model_name = "alexneakameni/language_detection"
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
-tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+language_detection_pipeline = pipeline(
+    "text-classification", model=model_name, device=0 if device == "cuda" else -1
+)
 
 sentences = [
     # English
@@ -53,11 +55,7 @@ sentences = [
 ]
 
 
-# Get label mapping
-id2label = model.config.id2label
-
-
-def get_iso1_code(code: str):
+def get_language_name(code: str):
     lang = code.split("_")[0]  # Extract the first part before '_'
     try:
         return pycountry.languages.get(alpha_3=lang).name  # Get ISO 639-1
@@ -67,20 +65,12 @@ def get_iso1_code(code: str):
 
 def predict_language(text, top_k=5):
     """Predicts the top-k languages for the given text."""
-    inputs = tokenizer(
-        text, return_tensors="pt", truncation=True, padding=True, max_length=512
-    ).to(device)
-    with torch.no_grad():
-        logits = model(**inputs).logits
-
-    probs = torch.nn.functional.softmax(logits, dim=-1).squeeze()
-    top_probs, top_indices = torch.topk(probs, top_k)
-
-    results = [
-        f"{get_iso1_code(id2label[idx.item()])} - {id2label[idx.item()]}: {prob:.4f}"
-        for prob, idx in zip(top_probs, top_indices)
+    results = language_detection_pipeline(text, top_k=top_k)
+    formatted_results = [
+        f"{get_language_name(result['label'])} - {result['label']}: {result['score']:.4f}"
+        for result in results
     ]
-    return "\n".join(results)
+    return "\n".join(formatted_results)
 
 
 # Create Gradio interface

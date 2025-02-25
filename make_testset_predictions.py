@@ -3,12 +3,30 @@ import json
 import datasets
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import argparse
+
+import os
+
+save_folder = "data/predictions"
+os.makedirs(save_folder, exist_ok=True)
+
+parser = argparse.ArgumentParser(description="Run predictions on the test dataset.")
+parser.add_argument(
+    "--model_name",
+    type=str,
+    default="alexneakameni/language_detection",
+    help="Path to the model checkpoint",
+)
+args = parser.parse_args()
+model_name: str = args.model_name
 
 # Load your dataset
-test = datasets.load_from_disk("data/test_dataset")
+# test = datasets.load_from_disk("data/test_dataset")
+# label_tag = "lang"
 
-# Define model checkpoint
-model_name = "alexneakameni/language_detection"
+test = datasets.load_dataset("papluca/language-identification", split="test")
+label_tag = "labels"
+
 
 # Load tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -16,6 +34,7 @@ model = AutoModelForSequenceClassification.from_pretrained(model_name)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model.to(device)
 model.eval()
+
 
 # Function to run prediction on a batch
 @torch.inference_mode()
@@ -26,7 +45,7 @@ def predict_batch(batch):
         truncation=True,
         padding="max_length",
         max_length=512,
-        return_tensors="pt"
+        return_tensors="pt",
     )
     # Move inputs to device
     inputs = {key: val.to(device) for key, val in inputs.items()}
@@ -42,20 +61,26 @@ def predict_batch(batch):
     pred_labels = [model.config.id2label[p.item()] for p in pred_ids]
     return {"predicted_label": pred_labels}
 
+
 # Define your batch size
 batch_size = 1024
 
-# Use map to apply the predict_batch function over the dataset in batches
-predictions = test.map(predict_batch, batched=True, batch_size=batch_size)
+from tqdm import tqdm
 
-# Combine predictions with ground truth labels
-results = {
-    "predictions": predictions["predicted_label"],
-    "expected": predictions["lang"]
-}
+results = {"predictions": [], "expected": []}
+for pos, batch in tqdm(enumerate(test.batch(batch_size))):
+    prediction_batch = predict_batch(batch)
+    results["predictions"].append(prediction_batch["predicted_label"])
+    results["expected"].append(batch[label_tag])
+    if pos % 100 == 0:
+        with open(f"{save_folder}/final_predictions_base.json", "w") as f:
+            json.dump(results, f)
+
 
 # Save the final predictions to a JSON file
-with open("data/predictions/final_predictions_base.json", "w") as f:
+with open(f"{save_folder}/final_predictions_base.json", "w") as f:
     json.dump(results, f)
 
-print("Prediction complete. Results saved to data/predictions/final_predictions_base.json")
+print(
+    f"Prediction complete. Results saved to {save_folder}/final_predictions_base.json"
+)
