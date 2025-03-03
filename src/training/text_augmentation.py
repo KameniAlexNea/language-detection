@@ -1,6 +1,6 @@
 import random
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict
 
 
@@ -18,14 +18,14 @@ class TextAugmentation:
     char_substitute_prob: float = 0.15
 
     # Common character substitutions for typos
-    CHAR_SUBS: Dict[str, List[str]] = {
+    CHAR_SUBS: Dict[str, List[str]] = field(default_factory=lambda: {
         "a": ["@", "4"],
         "e": ["3"],
         "i": ["1", "!"],
         "o": ["0"],
         "s": ["$"],
         "t": ["7"],
-    }
+    })
 
     def __call__(self, text: str) -> str:
         """Apply text augmentation to a single text."""
